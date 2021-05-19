@@ -1116,29 +1116,33 @@
 
 (defun one-shot-subscribe (topic-name mclass &key (timeout) (after-stamp) (unsubscribe t))
   "Subscribe message, just for once"
-  (let (lmsg)
-    (unless (ros::get-num-publishers topic-name)
-      (cond
-       (after-stamp
-        (ros::subscribe topic-name mclass
-                        #'(lambda (msg)
-                            (let ((st (send msg :header :stamp)))
-                              (when (> (send st :to-sec)
-                                       (send after-stamp :to-sec))
-                                (setq lmsg msg))))))
-       (t
-        (ros::subscribe topic-name mclass
-                        #'(lambda (msg) (setq lmsg msg))))))
-    (let ((finishtm (if timeout (ros::time-now))))
-      (when finishtm
-        (setq finishtm (ros::time+ finishtm (ros::time (/ timeout 1000.0)))))
-      (while (not (and finishtm
-                       (< (send (ros::time- finishtm (ros::time-now)) :to-Sec) 0)))
-        (unix::usleep (* 50 1000))
-        (ros::spin-once)
-        (if lmsg (return))))
-    (if unsubscribe (ros::unsubscribe topic-name))
-    lmsg))
+  ;; The purpose of unwind-protect is to call (ros::unsubscribe topic-name) even when C-c -> reset is executed.
+  ;; Please see https://github.com/jsk-ros-pkg/jsk_roseus/issues/666
+  (unwind-protect
+    (let (lmsg)
+      (unless (ros::get-num-publishers topic-name)
+        (cond
+         (after-stamp
+          (ros::subscribe topic-name mclass
+                          #'(lambda (msg)
+                              (let ((st (send msg :header :stamp)))
+                                (when (> (send st :to-sec)
+                                         (send after-stamp :to-sec))
+                                  (setq lmsg msg))))))
+         (t
+          (ros::subscribe topic-name mclass
+                          #'(lambda (msg) (setq lmsg msg))))))
+      (let ((finishtm (if timeout (ros::time-now))))
+        (when finishtm
+          (setq finishtm (ros::time+ finishtm (ros::time (/ timeout 1000.0)))))
+        (while (not (and finishtm
+                         (< (send (ros::time- finishtm (ros::time-now)) :to-Sec) 0)))
+          (unix::usleep (* 50 1000))
+          (ros::spin-once)
+          (if lmsg (return))))
+      (if unsubscribe (ros::unsubscribe topic-name))
+      lmsg)
+    (ros::unsubscribe topic-name)))
 
 (defun one-shot-publish (topic-name msg &key (wait 500) (after-stamp) (unadvertise t))
   "Publish message just for once"
