@@ -1122,16 +1122,21 @@
     (let (lmsg)
       (unless (ros::get-num-publishers topic-name)
         (cond
+         ;; We use `(lambda-closure nil ,(elt #'(lambda nil nil) 2) 0 (msg) (setq lmsg msg)) for subscriber callback
+         ;; This lambda function can be called from different let scope than the one defined.
+         ;; Please see https://github.com/jsk-ros-pkg/jsk_roseus/issues/666
          (after-stamp
           (ros::subscribe topic-name mclass
                           #'(lambda (msg)
                               (let ((st (send msg :header :stamp)))
                                 (when (> (send st :to-sec)
                                          (send after-stamp :to-sec))
-                                  (setq lmsg msg))))))
+                                  (funcall `(lambda-closure nil ,(elt #'(lambda nil nil) 2) 0 (msg) (setq lmsg msg))
+                                           msg))))))
          (t
           (ros::subscribe topic-name mclass
-                          #'(lambda (msg) (setq lmsg msg))))))
+                          #'(lambda (msg) (funcall `(lambda-closure nil ,(elt #'(lambda nil nil) 2) 0 (msg) (setq lmsg msg))
+                                                   msg))))))
       (let ((finishtm (if timeout (ros::time-now))))
         (when finishtm
           (setq finishtm (ros::time+ finishtm (ros::time (/ timeout 1000.0)))))
